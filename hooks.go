@@ -84,13 +84,14 @@ type Card struct {
 }
 
 type CardSucceeded struct {
-	Card                Card           `json:"card"`
-	Worktree            *WorktreeEntry `json:"worktree,omitempty"`
-	Summary             string         `json:"summary,omitempty"`
-	Feedback            bool           `json:"feedback"`
-	CreateChangeRequest bool           `json:"create_change_request"`
-	TransitionOnSuccess string         `json:"transition_on_success,omitempty"`
-	BaseBranch          string         `json:"base_branch,omitempty"`
+	Card                  Card           `json:"card"`
+	Worktree              *WorktreeEntry `json:"worktree,omitempty"`
+	Summary               string         `json:"summary,omitempty"`
+	Feedback              bool           `json:"feedback"`
+	CreateChangeRequest   bool           `json:"create_change_request"`
+	ChangeRequestProvider string         `json:"change_request_provider,omitempty"`
+	TransitionOnSuccess   string         `json:"transition_on_success,omitempty"`
+	BaseBranch            string         `json:"base_branch,omitempty"`
 }
 
 type cardSucceededResult struct {
