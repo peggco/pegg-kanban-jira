@@ -14,9 +14,10 @@ import (
 )
 
 const (
-	apiRoot   = "/rest/api/3"
-	agileRoot = "/rest/agile/1.0"
-	userAgent = "pegg-kanban-jira-plugin"
+	apiRootCloud      = "/rest/api/3"
+	apiRootDataCenter = "/rest/api/2"
+	agileRoot         = "/rest/agile/1.0"
+	userAgent         = "pegg-kanban-jira-plugin"
 )
 
 type APIError struct {
@@ -31,10 +32,13 @@ func (e *APIError) Error() string {
 }
 
 type Client struct {
-	baseURL string
-	email   string
-	token   string
-	http    *http.Client
+	baseURL  string
+	kind     string
+	email    string
+	username string
+	password string
+	token    string
+	http     *http.Client
 }
 
 func basicAuth(email, token string) string {
@@ -46,21 +50,48 @@ func basicAuth(email, token string) string {
 
 func newClient(s Settings) *Client {
 	return &Client{
-		baseURL: strings.TrimRight(s.BaseURL(), "/"),
-		email:   strings.TrimSpace(s.Email),
-		token:   strings.TrimSpace(s.Token),
-		http:    &http.Client{Timeout: s.timeout()},
+		baseURL:  strings.TrimRight(s.BaseURL(), "/"),
+		kind:     normalizeKind(s.Kind),
+		email:    strings.TrimSpace(s.Email),
+		username: strings.TrimSpace(s.Username),
+		password: strings.TrimSpace(s.Password),
+		token:    strings.TrimSpace(s.Token),
+		http:     &http.Client{Timeout: s.timeout()},
 	}
 }
 
+func (c *Client) apiRoot() string {
+	if c.kind == "datacenter" {
+		return apiRootDataCenter
+	}
+	return apiRootCloud
+}
+
+func (c *Client) authHeader() string {
+	if c.kind == "datacenter" {
+		if c.token != "" {
+			return "Bearer " + c.token
+		}
+		if c.username != "" && c.password != "" {
+			return "Basic " + basicAuth(c.username, c.password)
+		}
+		return ""
+	}
+	if c.token != "" {
+		return "Basic " + basicAuth(c.email, c.token)
+	}
+	return ""
+}
+
 func (c *Client) api(path string) string {
-	if strings.HasPrefix(path, apiRoot) {
+	root := c.apiRoot()
+	if strings.HasPrefix(path, root) {
 		return path
 	}
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	return apiRoot + path
+	return root + path
 }
 
 func (c *Client) agile(path string) string {
@@ -75,9 +106,15 @@ func (c *Client) agile(path string) string {
 
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, payload any, out any) error {
 	if strings.TrimSpace(c.baseURL) == "" {
+		if c.kind == "datacenter" {
+			return fmt.Errorf("jira is not configured: set PEGG_JIRA_URL or plugins.options.jira.base_url")
+		}
 		return fmt.Errorf("jira is not configured: set PEGG_JIRA_SITE or plugins.options.jira.site")
 	}
-	if strings.TrimSpace(c.token) == "" {
+	if c.authHeader() == "" {
+		if c.kind == "datacenter" {
+			return fmt.Errorf("jira credentials are not configured: set PEGG_JIRA_TOKEN or PEGG_JIRA_USERNAME and PEGG_JIRA_PASSWORD")
+		}
 		return fmt.Errorf("jira credentials are not configured: set PEGG_JIRA_EMAIL and PEGG_JIRA_TOKEN")
 	}
 	var body io.Reader
@@ -109,8 +146,8 @@ func (c *Client) doRaw(ctx context.Context, method, path string, query url.Value
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Basic "+basicAuth(c.email, c.token))
+	if auth := c.authHeader(); auth != "" {
+		req.Header.Set("Authorization", auth)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -159,7 +196,7 @@ func (c *Client) putJSON(ctx context.Context, path string, payload any, out any)
 }
 
 func (c *Client) redact(value string) string {
-	for _, secret := range []string{c.token, basicAuth(c.email, c.token)} {
+	for _, secret := range []string{c.token, c.password, basicAuth(c.email, c.token), basicAuth(c.username, c.password)} {
 		if secret != "" {
 			value = strings.ReplaceAll(value, secret, "[redacted]")
 		}

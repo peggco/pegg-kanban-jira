@@ -19,8 +19,12 @@ var configKeys = []string{"jira", "pegg-jira", configKey, configKeyAlt}
 
 type Settings struct {
 	Enabled               bool     `json:"enabled"`
+	Kind                  string   `json:"kind"`
 	Site                  string   `json:"site"`
+	BaseURLRaw            string   `json:"base_url"`
 	Email                 string   `json:"email"`
+	Username              string   `json:"username"`
+	Password              string   `json:"password"`
 	Token                 string   `json:"token"`
 	Project               string   `json:"project"`
 	DefaultJQL            string   `json:"default_jql"`
@@ -77,8 +81,20 @@ func (s *Settings) applyEnv() {
 	if v := strings.TrimSpace(os.Getenv("PEGG_JIRA_OPTIONS")); v != "" {
 		_ = s.applyOptions(json.RawMessage(v))
 	}
+	if v := strings.TrimSpace(os.Getenv("PEGG_JIRA_KIND")); v != "" {
+		s.Kind = v
+	}
 	if v := strings.TrimSpace(os.Getenv("PEGG_JIRA_SITE")); v != "" {
 		s.Site = v
+	}
+	if v := strings.TrimSpace(os.Getenv("PEGG_JIRA_URL")); v != "" {
+		s.BaseURLRaw = v
+	}
+	if v := strings.TrimSpace(os.Getenv("PEGG_JIRA_USERNAME")); v != "" {
+		s.Username = v
+	}
+	if v := strings.TrimSpace(os.Getenv("PEGG_JIRA_PASSWORD")); v != "" {
+		s.Password = v
 	}
 	if v := strings.TrimSpace(os.Getenv("PEGG_JIRA_EMAIL")); v != "" {
 		s.Email = v
@@ -118,8 +134,12 @@ func (s *Settings) applyEnv() {
 }
 
 func (s *Settings) normalize() {
+	s.Kind = normalizeKind(s.Kind)
 	s.Site = strings.TrimSpace(s.Site)
+	s.BaseURLRaw = strings.TrimSpace(s.BaseURLRaw)
 	s.Email = strings.TrimSpace(s.Email)
+	s.Username = strings.TrimSpace(s.Username)
+	s.Password = strings.TrimSpace(s.Password)
 	s.Token = strings.TrimSpace(s.Token)
 	s.Project = strings.TrimSpace(s.Project)
 	s.DefaultJQL = strings.TrimSpace(s.DefaultJQL)
@@ -138,7 +158,34 @@ func (s *Settings) normalize() {
 	s.Workdir = expandHome(s.Workdir)
 }
 
+func normalizeKind(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "datacenter", "data-center", "data_center", "server", "dc":
+		return "datacenter"
+	default:
+		return "cloud"
+	}
+}
+
+func (s Settings) isDataCenter() bool {
+	return normalizeKind(s.Kind) == "datacenter"
+}
+
 func (s Settings) BaseURL() string {
+	if s.isDataCenter() {
+		base := strings.TrimSpace(s.BaseURLRaw)
+		if base == "" {
+			base = strings.TrimSpace(s.Site)
+		}
+		if base == "" {
+			return ""
+		}
+		base = strings.TrimRight(base, "/")
+		if strings.HasPrefix(base, "http://") || strings.HasPrefix(base, "https://") {
+			return base
+		}
+		return "https://" + base
+	}
 	site := strings.TrimSpace(s.Site)
 	if site == "" {
 		return ""
@@ -161,10 +208,16 @@ func (s Settings) timeout() time.Duration {
 }
 
 func (s Settings) configured() bool {
-	return s.BaseURL() != "" && s.Email != "" && s.Token != ""
+	return s.BaseURL() != "" && s.authenticated()
 }
 
 func (s Settings) authenticated() bool {
+	if s.isDataCenter() {
+		if strings.TrimSpace(s.Token) != "" {
+			return true
+		}
+		return strings.TrimSpace(s.Username) != "" && strings.TrimSpace(s.Password) != ""
+	}
 	return strings.TrimSpace(s.Email) != "" && strings.TrimSpace(s.Token) != ""
 }
 
@@ -198,7 +251,7 @@ func expandHome(path string) string {
 }
 
 func redactSettings(msg string, s Settings) string {
-	for _, secret := range []string{s.Token, basicAuth(s.Email, s.Token)} {
+	for _, secret := range []string{s.Token, s.Password, basicAuth(s.Email, s.Token), basicAuth(s.Username, s.Password)} {
 		if secret != "" {
 			msg = strings.ReplaceAll(msg, secret, "[redacted]")
 		}
@@ -250,8 +303,12 @@ func persistSettings(settings Settings) (string, error) {
 		entry = map[string]any{}
 	}
 	entry["enabled"] = settings.Enabled
+	entry["kind"] = settings.Kind
 	entry["site"] = settings.Site
+	entry["base_url"] = settings.BaseURLRaw
 	entry["email"] = settings.Email
+	entry["username"] = settings.Username
+	entry["password"] = settings.Password
 	entry["token"] = settings.Token
 	entry["project"] = settings.Project
 	entry["default_jql"] = settings.DefaultJQL

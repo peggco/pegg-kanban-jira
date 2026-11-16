@@ -232,6 +232,9 @@ func providerDetail(settings Settings, authenticated bool, target string) string
 	case !settings.Enabled:
 		return "Plugin disabled; enable Jira to sync issues"
 	case !authenticated:
+		if settings.isDataCenter() {
+			return "Set base_url and a personal access token, or username and password, to authenticate"
+		}
 		return "Set site, email, and API token to authenticate"
 	case target == "":
 		return "Set a project key to select issues"

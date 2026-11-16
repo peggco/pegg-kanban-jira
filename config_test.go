@@ -175,3 +175,45 @@ func TestDefaultJQL(t *testing.T) {
 		t.Fatalf("configured JQL = %q, want %q", got, want)
 	}
 }
+
+func TestDataCenterBaseURL(t *testing.T) {
+	settings := Settings{Kind: "datacenter", BaseURLRaw: "https://jira.example.com/"}
+	if got := settings.BaseURL(); got != "https://jira.example.com" {
+		t.Fatalf("BaseURL = %q", got)
+	}
+	settings = Settings{Kind: "dc", Site: "jira.example.com"}
+	if got := settings.BaseURL(); got != "https://jira.example.com" {
+		t.Fatalf("BaseURL from site = %q", got)
+	}
+}
+
+func TestDataCenterAuthAndAPIRoot(t *testing.T) {
+	settings := Settings{Kind: "datacenter", BaseURLRaw: "https://jira.example.com", Token: "pat-token"}
+	client := newClient(settings)
+	if got := client.authHeader(); got != "Bearer pat-token" {
+		t.Fatalf("auth = %q", got)
+	}
+	if got := client.apiRoot(); got != "/rest/api/2" {
+		t.Fatalf("api root = %q", got)
+	}
+
+	settings = Settings{Kind: "datacenter", BaseURLRaw: "https://jira.example.com", Username: "user", Password: "pass"}
+	client = newClient(settings)
+	if got := client.authHeader(); got != "Basic "+basicAuth("user", "pass") {
+		t.Fatalf("basic auth = %q", got)
+	}
+	if !settings.authenticated() {
+		t.Fatal("username/password should authenticate")
+	}
+}
+
+func TestCloudAuthAndAPIRoot(t *testing.T) {
+	settings := Settings{Kind: "cloud", Site: "acme", Email: "user@example.com", Token: "api-token"}
+	client := newClient(settings)
+	if got := client.authHeader(); got != "Basic "+basicAuth("user@example.com", "api-token") {
+		t.Fatalf("auth = %q", got)
+	}
+	if got := client.apiRoot(); got != "/rest/api/3" {
+		t.Fatalf("api root = %q", got)
+	}
+}
