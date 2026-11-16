@@ -176,7 +176,7 @@ fetch limit is clamped to at most 100 issues per request.
 ### `kanban.card.succeeded`
 
 Accepts
-`{card,worktree,summary,feedback,create_change_request,transition_on_success,base_branch}`.
+`{card,worktree,summary,feedback,create_change_request,change_request_provider,transition_on_success,base_branch}`.
 Only cards whose `card.issue.provider` is `jira` are handled.
 
 - When `feedback` is true and `summary` is non-empty, the summary is posted as
@@ -186,6 +186,11 @@ Only cards whose `card.issue.provider` is `jira` are handled.
   if no transition matches, the hook returns an error listing the available
   transitions.
 - The result is `{key,commented,transitioned}`.
+
+Jira is not a git host, so this plugin never opens a pull request. Kanban routes the
+change request to a git-host plugin through `change_request_provider`; by default
+`kanban-bitbucket` handles Jira issues (`{"jira": "bitbucket"}`). See the
+[Bitbucket plugin](https://github.com/peggco/pegg-kanban-bitbucket) for the delivery side.
 
 The payload structs are mirrored locally in `hooks.go`; no Kanban code is
 imported.
